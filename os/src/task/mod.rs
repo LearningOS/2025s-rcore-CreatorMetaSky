@@ -189,7 +189,7 @@ pub fn exit_current_and_run_next() {
     run_next_task();
 }
 
-/// Set syscall count
+/// Update syscall count
 pub fn update_syscall_count(syscall_id: usize) {
     TASK_MANAGER.update_syscall_count(syscall_id);
 }
