@@ -169,3 +169,11 @@ pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
 }
+
+/// Set syscall count
+pub fn set_syscall_count() {}
+
+/// Get syscall count
+pub fn get_syscall_count(_id: usize) -> usize {
+    return 1;
+}
