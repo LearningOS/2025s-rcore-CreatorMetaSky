@@ -146,7 +146,7 @@ Test sleep OK!
 [kernel] Panicked at src/task/mod.rs:139 All applications completed!
 ```
 
-## 简单总结
+# 简单总结
 
 通过在 TaskManager 记录系统调用的次数，实现系统调用次数的更新和读取。
 
@@ -164,4 +164,34 @@ Test sleep OK!
     - default trait 用法
     - 所有权机制结合集合类数据结构的使用
 
-## 简答作业
+# 简答作业
+
+## 1. 进入用户态访问内核态指令寄存器报错
+
+版本信息：[rustsbi] RustSBI version 0.3.0-alpha.2, adapting to RISC-V SBI v1.0.0
+
+### ch2b_bad_address
+
+这个错误是因为程序尝试访问地址 0x0，这是一个无效的内存地址。在操作系统中，地址 0x0 通常被保留，不允许用户程序访问。0x0通常这是为了捕获空指针引用的错误。当程序尝试写入地址 0x0 时，特权级处理会检测到异常，打印报错日志
+
+```sh
+[kernel] PageFault in application, bad addr = 0x0, bad instruction = 0x804003a4, kernel killed it.
+```
+
+### ch2b_bad_instruction
+
+由于特权级别限制，sret (Supervisor Return) 是一个特权指令，它只能在 S 模式（Supervisor Mode，即内核态）下执行。在 RISC-V 架构中，用户程序运行在 U 模式（User Mode，即用户态），没有权限执行这类特权指令，所以会报错：
+
+```sh
+[kernel] IllegalInstruction in application, kernel killed it.
+```
+
+### ch2b_bad_register
+
+sstatus 也是 RISC-V 架构中的一个特权寄存器，属于 S 模式（Supervisor Mode，即内核态）。用户程序运行在 U 模式（User Mode，即用户态）下，没有权限直接访问这类特权寄存器，所有会报错：
+
+```sh
+[kernel] IllegalInstruction in application, kernel killed it.
+```
+
+##
