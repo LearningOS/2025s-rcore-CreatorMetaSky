@@ -1,9 +1,10 @@
 //! Process management syscalls
 
 use crate::{
-    mm::translated_byte_buffer,
+    config::PAGE_SIZE,
+    mm::{translated_byte_buffer, MapPermission},
     task::{
-        change_program_brk, current_user_token, exit_current_and_run_next,
+        self, change_program_brk, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
     },
     timer::get_time_us,
@@ -59,22 +60,119 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
-pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
+pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
-    -1
+    let token = current_user_token();
+
+    let addr = id as *const u8;
+    let len = 1;
+
+    let buffers = translated_byte_buffer(token, addr, len);
+
+    if buffers.is_empty() {
+        return -1;
+    }
+
+    match trace_request {
+        0 => {
+            // read
+            let buffer = &buffers[0];
+            buffer[0] as isize
+        }
+        1 => {
+            // write
+            let mut buffers = translated_byte_buffer(token, addr, len);
+            if let Some(buffer) = buffers.iter_mut().next() {
+                buffer[0] = data as u8;
+                0
+            } else {
+                -1
+            }
+        }
+        _ => -1,
+    }
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    trace!("kernel: sys_mmap");
+
+    // 检查起始地址是否页对齐
+    if start & (PAGE_SIZE - 1) != 0 {
+        return -1;
+    }
+
+    // 检查 port 参数是否有效
+    if port & !0x7 != 0 {
+        return -1;
+    }
+
+    // 检查是否至少有一个权限位
+    if port & 0x7 == 0 {
+        return -1;
+    }
+
+    // 计算需要映射的页数（向上取整）
+    let len = if len == 0 {
+        0
+    } else {
+        (len - 1) / PAGE_SIZE + 1
+    };
+
+    // 转换权限
+    let mut permission = MapPermission::U; // 用户态可访问
+    if (port & 1) != 0 {
+        permission |= MapPermission::R;
+    } // 可读
+    if (port & 2) != 0 {
+        permission |= MapPermission::W;
+    } // 可写
+    if (port & 4) != 0 {
+        permission |= MapPermission::X;
+    } // 可执行
+
+    // 执行映射
+    let end = start + len * PAGE_SIZE;
+
+    // 创建一个新的内存映射区域
+    let result = task::mmap(start, end, permission);
+
+    if result {
+        0
+    } else {
+        -1
+    }
 }
 
 // YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    trace!("kernel: sys_munmap");
+
+    // 检查起始地址是否页对齐
+    if start & (PAGE_SIZE - 1) != 0 {
+        return -1;
+    }
+
+    // 计算需要取消映射的页数（向上取整）
+    let len = if len == 0 {
+        0
+    } else {
+        (len - 1) / PAGE_SIZE + 1
+    };
+
+    // 执行取消映射
+    let end = start + len * PAGE_SIZE;
+
+    // 使用公共接口取消映射
+    let result = task::munmap(start, end);
+
+    if result {
+        0
+    } else {
+        -1
+    }
 }
+
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
     trace!("kernel: sys_sbrk");

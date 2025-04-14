@@ -15,6 +15,7 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -201,4 +202,28 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+// pub fn current_task() -> Option<&'static TaskControlBlock> {
+//     let inner = TASK_MANAGER.inner.exclusive_access();
+//     let current = inner.current_task;
+//     Some(&inner.tasks[current])
+// }
+
+/// mmap file
+pub fn mmap(start: usize, end: usize, permission: MapPermission) -> bool {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    inner.tasks[current]
+        .memory_set
+        .mmap(start.into(), end.into(), permission)
+}
+
+/// Unmap a memory region
+pub fn munmap(start: usize, end: usize) -> bool {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    inner.tasks[current]
+        .memory_set
+        .munmap(start.into(), end.into())
 }

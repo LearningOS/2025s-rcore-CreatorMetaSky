@@ -262,6 +262,52 @@ impl MemorySet {
             false
         }
     }
+
+    /// mmap virtual memory
+    pub fn mmap(&mut self, start: VirtAddr, end: VirtAddr, permission: MapPermission) -> bool {
+        // 检查是否有重叠的区域
+        for area in &self.areas {
+            if area.vpn_range.get_start() <= end.ceil() && start.floor() <= area.vpn_range.get_end()
+            {
+                return false;
+            }
+        }
+
+        // 创建新的映射区域
+        let map_area = MapArea::new(start, end, MapType::Framed, permission);
+
+        // 将新区域添加到内存集
+        self.push(map_area, None);
+        true
+    }
+
+    /// Unmap a virtual memory area
+    pub fn munmap(&mut self, start: VirtAddr, end: VirtAddr) -> bool {
+        // 找到要取消映射的区域
+        let mut found = false;
+        let mut to_remove = Vec::new();
+
+        for (i, area) in self.areas.iter().enumerate() {
+            if area.vpn_range.get_start() == start.floor() && area.vpn_range.get_end() == end.ceil()
+            {
+                found = true;
+                to_remove.push(i);
+                break;
+            }
+        }
+
+        if !found {
+            return false;
+        }
+
+        // 从后往前移除区域，避免索引失效
+        for i in to_remove.into_iter().rev() {
+            let mut area = self.areas.remove(i);
+            area.unmap(&mut self.page_table);
+        }
+
+        true
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
