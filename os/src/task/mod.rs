@@ -212,6 +212,7 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
 
 /// mmap file
 pub fn mmap(start: usize, end: usize, permission: MapPermission) -> bool {
+    // test
     let mut inner = TASK_MANAGER.inner.exclusive_access();
     let current = inner.current_task;
     inner.tasks[current]
