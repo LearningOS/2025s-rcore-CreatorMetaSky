@@ -46,7 +46,7 @@ impl PageTableEntry {
     pub fn empty() -> Self {
         PageTableEntry { bits: 0 }
     }
-    /// Get the physical page number from the page table entry
+    /// Get the physical page number from the page table entry 物理页号
     pub fn ppn(&self) -> PhysPageNum {
         (self.bits >> 10 & ((1usize << 44) - 1)).into()
     }
@@ -74,7 +74,7 @@ impl PageTableEntry {
 
 /// page table structure
 pub struct PageTable {
-    root_ppn: PhysPageNum,
+    root_ppn: PhysPageNum, // 根页号
     frames: Vec<FrameTracker>,
 }
 

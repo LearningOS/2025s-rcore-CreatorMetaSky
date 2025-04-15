@@ -35,8 +35,8 @@ lazy_static! {
 }
 /// address space
 pub struct MemorySet {
-    page_table: PageTable,
-    areas: Vec<MapArea>,
+    page_table: PageTable, // 页管理
+    areas: Vec<MapArea>,   // 管理所有的内存分布
 }
 
 impl MemorySet {
@@ -47,10 +47,12 @@ impl MemorySet {
             areas: Vec::new(),
         }
     }
+
     /// Get the page table token
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
+
     /// Assume that no conflicts.
     pub fn insert_framed_area(
         &mut self,
@@ -221,6 +223,7 @@ impl MemorySet {
             elf.header.pt2.entry_point() as usize,
         )
     }
+
     /// Change page table by writing satp CSR Register.
     pub fn activate(&self) {
         let satp = self.page_table.token();
@@ -229,10 +232,12 @@ impl MemorySet {
             asm!("sfence.vma");
         }
     }
+
     /// Translate a virtual page number to a page table entry
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+
     /// shrink the area to new_end
     #[allow(unused)]
     pub fn shrink_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
@@ -265,30 +270,47 @@ impl MemorySet {
 
     /// mmap virtual memory
     pub fn mmap(&mut self, start: VirtAddr, end: VirtAddr, permission: MapPermission) -> bool {
-        // 检查是否有重叠的区域
+        // 检查地址范围是否有效
+        if start >= end || start.page_offset() != 0 {
+            return false;
+        }
+
+        // 检查是否与现有映射重叠
+        let vpn_range = VPNRange::new(start.floor(), end.ceil());
         for area in &self.areas {
-            if area.vpn_range.get_start() <= end.ceil() && start.floor() <= area.vpn_range.get_end()
+            if area.vpn_range.get_start() <= vpn_range.get_end()
+                && vpn_range.get_start() <= area.vpn_range.get_end()
             {
                 return false;
             }
         }
 
-        // 创建新的映射区域
+        // 创建新的映射区域，使用 Framed 类型以便按需分配物理页
         let map_area = MapArea::new(start, end, MapType::Framed, permission);
 
-        // 将新区域添加到内存集
-        self.push(map_area, None);
+        // 将新区域添加到内存集，但不立即分配所有物理页
+        self.areas.push(map_area);
+
+        // 只有在第一次访问时才会分配物理页（通过缺页异常处理）
         true
     }
 
     /// Unmap a virtual memory area
     pub fn munmap(&mut self, start: VirtAddr, end: VirtAddr) -> bool {
-        // 找到要取消映射的区域
+        // 检查地址范围是否有效
+        if start >= end || start.page_offset() != 0 {
+            return false;
+        }
+
+        let vpn_range = VPNRange::new(start.floor(), end.ceil());
+
+        // 查找要取消映射的区域
         let mut found = false;
         let mut to_remove = Vec::new();
 
         for (i, area) in self.areas.iter().enumerate() {
-            if area.vpn_range.get_start() == start.floor() && area.vpn_range.get_end() == end.ceil()
+            if area.vpn_range.get_start() == vpn_range.get_start()
+                && area.vpn_range.get_end() == vpn_range.get_end()
             {
                 found = true;
                 to_remove.push(i);
@@ -348,6 +370,7 @@ impl MapArea {
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
         page_table.map(vpn, ppn, pte_flags);
     }
+
     #[allow(unused)]
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
@@ -355,6 +378,7 @@ impl MapArea {
         }
         page_table.unmap(vpn);
     }
+
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
@@ -407,8 +431,8 @@ impl MapArea {
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
 pub enum MapType {
-    Identical,
-    Framed,
+    Identical, // 内核直接映射 - 恒等映射
+    Framed,    // 用户程序
 }
 
 bitflags! {
