@@ -2,9 +2,9 @@
 
 use crate::{
     config::PAGE_SIZE,
-    mm::{translated_byte_buffer, MapPermission, VirtAddr},
+    mm::{translated_byte_buffer, MapPermission, PageTable, VirtAddr},
     task::{
-        self, change_program_brk, current_user_token, exit_current_and_run_next,
+        self, change_program_brk, current_user_token, exit_current_and_run_next, get_syscall_count,
         suspend_current_and_run_next,
     },
     timer::get_time_us,
@@ -57,33 +57,35 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
-    let token = current_user_token();
 
-    let addr = id as *const u8;
-    let len = 1;
-
-    let buffers = translated_byte_buffer(token, addr, len);
-
-    if buffers.is_empty() {
-        return -1;
-    }
+    let pagetable = PageTable::from_token(current_user_token());
+    let vaddr = VirtAddr::from(id);
+    let vpn = VirtAddr::from(id).floor();
 
     match trace_request {
-        0 => {
-            // read
-            let buffer = &buffers[0];
-            buffer[0] as isize
-        }
-        1 => {
-            // write
-            let mut buffers = translated_byte_buffer(token, addr, len);
-            if let Some(buffer) = buffers.iter_mut().next() {
-                buffer[0] = data as u8;
-                0
-            } else {
-                -1
+        0 => match pagetable.translate(vpn) {
+            Some(pte) if pte.is_valid() && pte.readable() && pte.user() => {
+                let ppn = pte.ppn();
+                let offset = vaddr.page_offset();
+                let page_ptr = ppn.get_bytes_array().as_ptr();
+                let byte = unsafe { *page_ptr.add(offset) };
+                byte as isize
             }
-        }
+            _ => -1,
+        },
+        1 => match pagetable.translate(vpn) {
+            Some(pte) if pte.is_valid() && pte.writable() && pte.user() => {
+                let ppn = pte.ppn();
+                let offset = vaddr.page_offset();
+                let page_ptr = ppn.get_bytes_array().as_mut_ptr();
+                unsafe {
+                    *page_ptr.add(offset) = data as u8;
+                }
+                0
+            }
+            _ => -1,
+        },
+        2 => get_syscall_count(id) as isize,
         _ => -1,
     }
 }
@@ -112,27 +114,21 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     }
 }
 
-// YOUR JOB: Implement munmap.
 pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!("kernel: sys_munmap");
 
-    // 检查起始地址是否页对齐
     if start & (PAGE_SIZE - 1) != 0 {
         return -1;
     }
 
-    // 计算需要取消映射的页数（向上取整）
-    let len = if len == 0 {
-        0
-    } else {
-        (len - 1) / PAGE_SIZE + 1
-    };
+    if len == 0 {
+        return 0;
+    }
 
-    // 执行取消映射
-    let end = start + len * PAGE_SIZE;
+    let start_va = VirtAddr::from(start);
+    let end_va = VirtAddr::from(start + len);
 
-    // 使用公共接口取消映射
-    let result = task::munmap(start, end);
+    let result = task::munmap(start_va, end_va);
 
     if result {
         0

@@ -287,39 +287,19 @@ impl MemorySet {
     }
 
     /// Unmap a virtual memory area
-    pub fn munmap(&mut self, start: VirtAddr, end: VirtAddr) -> bool {
-        // 检查地址范围是否有效
-        if start >= end || start.page_offset() != 0 {
-            return false;
-        }
+    pub fn munmap(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let pos = self.areas.iter().position(|area| {
+            area.vpn_range.get_start() == start_va.floor()
+                && area.vpn_range.get_end() == end_va.ceil()
+        });
 
-        let vpn_range = VPNRange::new(start.floor(), end.ceil());
-
-        // 查找要取消映射的区域
-        let mut found = false;
-        let mut to_remove = Vec::new();
-
-        for (i, area) in self.areas.iter().enumerate() {
-            if area.vpn_range.get_start() == vpn_range.get_start()
-                && area.vpn_range.get_end() == vpn_range.get_end()
-            {
-                found = true;
-                to_remove.push(i);
-                break;
-            }
-        }
-
-        if !found {
-            return false;
-        }
-
-        // 从后往前移除区域，避免索引失效
-        for i in to_remove.into_iter().rev() {
-            let mut area = self.areas.remove(i);
+        if let Some(index) = pos {
+            let mut area = self.areas.remove(index);
             area.unmap(&mut self.page_table);
+            true
+        } else {
+            false
         }
-
-        true
     }
 }
 

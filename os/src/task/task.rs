@@ -1,4 +1,6 @@
 //! Types related to task management
+use alloc::collections::btree_map::BTreeMap;
+
 use super::TaskContext;
 use crate::config::TRAP_CONTEXT_BASE;
 use crate::mm::{
@@ -109,4 +111,9 @@ pub enum TaskStatus {
     Running,
     /// exited
     Exited,
+}
+
+#[derive(Default)]
+pub struct SysCallInfo {
+    pub count_map: BTreeMap<usize, usize>,
 }

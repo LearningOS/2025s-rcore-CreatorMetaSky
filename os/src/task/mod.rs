@@ -21,6 +21,7 @@ use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
+use task::SysCallInfo;
 pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
@@ -47,6 +48,8 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    // syscall information
+    syscall_infos: [SysCallInfo; 20],
 }
 
 lazy_static! {
@@ -65,6 +68,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    syscall_infos: Default::default()
                 })
             },
         }
@@ -155,12 +159,34 @@ impl TaskManager {
         }
     }
 
+    fn update_syscall_count(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let cur_task_id = inner.current_task;
+        let syscall_info = &mut inner.syscall_infos[cur_task_id];
+
+        *syscall_info.count_map.entry(syscall_id).or_insert(0) += 1;
+    }
+
+    fn get_syscall_count(&self, syscall_id: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+        let cur_task_id = inner.current_task;
+        let syscall_info = &inner.syscall_infos[cur_task_id];
+        *syscall_info.count_map.get(&syscall_id).unwrap_or(&0)
+    }
+
     /// Map virtual memory to phisical memory
     pub fn mmap(&self, start_va: VirtAddr, end_va: VirtAddr, map_perm: MapPermission) -> bool {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let memory_set = &mut inner.tasks[current].memory_set;
         memory_set.mmap(start_va, end_va, map_perm)
+    }
+
+    /// Unmap memory
+    pub fn munmap(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let mut inner = TASK_MANAGER.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.munmap(start_va, end_va)
     }
 }
 
@@ -212,22 +238,22 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
 
-// pub fn current_task() -> Option<&'static TaskControlBlock> {
-//     let inner = TASK_MANAGER.inner.exclusive_access();
-//     let current = inner.current_task;
-//     Some(&inner.tasks[current])
-// }
+/// Update syscall count
+pub fn update_syscall_count(syscall_id: usize) {
+    TASK_MANAGER.update_syscall_count(syscall_id);
+}
 
-/// mmap file
+/// Get syscall count
+pub fn get_syscall_count(syscall_id: usize) -> usize {
+    TASK_MANAGER.get_syscall_count(syscall_id)
+}
+
+/// mmap use task manager
 pub fn mmap(start_va: VirtAddr, end_va: VirtAddr, map_perm: MapPermission) -> bool {
     TASK_MANAGER.mmap(start_va, end_va, map_perm)
 }
 
 /// Unmap a memory region
-pub fn munmap(start: usize, end: usize) -> bool {
-    let mut inner = TASK_MANAGER.inner.exclusive_access();
-    let current = inner.current_task;
-    inner.tasks[current]
-        .memory_set
-        .munmap(start.into(), end.into())
+pub fn munmap(start_va: VirtAddr, end_va: VirtAddr) -> bool {
+    TASK_MANAGER.munmap(start_va, end_va)
 }
