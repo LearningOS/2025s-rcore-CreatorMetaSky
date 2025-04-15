@@ -84,7 +84,8 @@ impl MemorySet {
     pub fn new_kernel() -> Self {
         let mut memory_set = Self::new_bare();
         // map trampoline
-        memory_set.map_trampoline();
+        memory_set.map_trampoline(); // 跳板页
+
         // map kernel sections
         info!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
         info!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
