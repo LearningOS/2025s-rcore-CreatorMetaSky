@@ -2,7 +2,7 @@
 
 use crate::{
     config::PAGE_SIZE,
-    mm::{translated_byte_buffer, MapPermission},
+    mm::{translated_byte_buffer, MapPermission, VirtAddr},
     task::{
         self, change_program_brk, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
@@ -31,12 +31,12 @@ pub fn sys_yield() -> isize {
     0
 }
 
-/// YOUR JOB: get time with second and microsecond
-/// HINT: You might reimplement it with virtual memory management.
-/// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
+
     let len = core::mem::size_of::<TimeVal>();
+    let mut translated_ts_buffers =
+        translated_byte_buffer(current_user_token(), ts as *const u8, len);
 
     let us = get_time_us();
     let time_val = TimeVal {
@@ -46,20 +46,15 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     let time_val_bytes =
         unsafe { core::slice::from_raw_parts(&time_val as *const TimeVal as *const u8, len) };
 
-    let mut buffers = translated_byte_buffer(current_user_token(), ts as *const u8, len); // 用户空间虚拟地址转换为内核空间物理地址
-
-    // 数据拷贝
     let mut offset = 0;
-    for buffer in buffers.iter_mut() {
-        let copy_len = buffer.len();
-        buffer.copy_from_slice(&time_val_bytes[offset..offset + copy_len]);
+    for buf in translated_ts_buffers.iter_mut() {
+        let copy_len = buf.len();
+        buf.copy_from_slice(&time_val_bytes[offset..offset + copy_len]);
         offset += copy_len;
     }
     0
 }
 
-/// TODO: Finish sys_trace to pass testcases
-/// HINT: You might reimplement it with virtual memory management.
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
     let token = current_user_token();
@@ -93,51 +88,24 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     }
 }
 
-// YOUR JOB: Implement mmap.
-pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     trace!("kernel: sys_mmap");
 
-    // 检查起始地址是否页对齐
-    if start & (PAGE_SIZE - 1) != 0 {
+    if start & (PAGE_SIZE - 1) != 0 || prot & !0x7 != 0 || prot & 0x7 == 0 {
         return -1;
     }
 
-    // 检查 port 参数是否有效
-    if port & !0x7 != 0 {
-        return -1;
+    if len == 0 {
+        return 0;
     }
 
-    // 检查是否至少有一个权限位
-    if port & 0x7 == 0 {
-        return -1;
-    }
+    let start_va = VirtAddr::from(start);
+    let end_va = VirtAddr::from(start + len);
+    let mut map_perm = MapPermission::from_bits((prot << 1) as u8).unwrap();
+    map_perm |= MapPermission::U;
 
-    // 计算需要映射的页数（向上取整）
-    let len = if len == 0 {
-        0
-    } else {
-        (len - 1) / PAGE_SIZE + 1
-    };
-
-    // 转换权限
-    let mut permission = MapPermission::U; // 用户态可访问
-    if (port & 1) != 0 {
-        permission |= MapPermission::R;
-    } // 可读
-    if (port & 2) != 0 {
-        permission |= MapPermission::W;
-    } // 可写
-    if (port & 4) != 0 {
-        permission |= MapPermission::X;
-    } // 可执行
-
-    // 执行映射
-    let end = start + len * PAGE_SIZE;
-
-    // 创建一个新的内存映射区域
-    let result = task::mmap(start, end, permission);
-
-    if result {
+    let res = task::mmap(start_va, end_va, map_perm);
+    if res {
         0
     } else {
         -1

@@ -15,7 +15,7 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::MapPermission;
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -154,6 +154,14 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    /// Map virtual memory to phisical memory
+    pub fn mmap(&self, start_va: VirtAddr, end_va: VirtAddr, map_perm: MapPermission) -> bool {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let memory_set = &mut inner.tasks[current].memory_set;
+        memory_set.mmap(start_va, end_va, map_perm)
+    }
 }
 
 /// Run the first task in task list.
@@ -211,13 +219,8 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
 // }
 
 /// mmap file
-pub fn mmap(start: usize, end: usize, permission: MapPermission) -> bool {
-    // test
-    let mut inner = TASK_MANAGER.inner.exclusive_access();
-    let current = inner.current_task;
-    inner.tasks[current]
-        .memory_set
-        .mmap(start.into(), end.into(), permission)
+pub fn mmap(start_va: VirtAddr, end_va: VirtAddr, map_perm: MapPermission) -> bool {
+    TASK_MANAGER.mmap(start_va, end_va, map_perm)
 }
 
 /// Unmap a memory region

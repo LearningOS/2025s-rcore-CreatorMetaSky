@@ -33,7 +33,8 @@ lazy_static! {
     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> =
         Arc::new(unsafe { UPSafeCell::new(MemorySet::new_kernel()) });
 }
-/// address space
+
+/// address space 地址空间 = 一系列有关联的逻辑段
 pub struct MemorySet {
     page_table: PageTable, // 页管理
     areas: Vec<MapArea>,   // 管理所有的内存分布
@@ -269,30 +270,19 @@ impl MemorySet {
         }
     }
 
-    /// mmap virtual memory
-    pub fn mmap(&mut self, start: VirtAddr, end: VirtAddr, permission: MapPermission) -> bool {
-        // 检查地址范围是否有效
-        if start >= end || start.page_offset() != 0 {
-            return false;
-        }
-
-        // 检查是否与现有映射重叠
-        let vpn_range = VPNRange::new(start.floor(), end.ceil());
+    /// memory map from virtual memory to physical memory
+    pub fn mmap(&mut self, start_va: VirtAddr, end_va: VirtAddr, map_perm: MapPermission) -> bool {
         for area in &self.areas {
-            if area.vpn_range.get_start() <= vpn_range.get_end()
-                && vpn_range.get_start() <= area.vpn_range.get_end()
+            if end_va >= area.vpn_range.get_start().into()
+                && start_va <= area.vpn_range.get_end().into()
             {
                 return false;
             }
         }
 
-        // 创建新的映射区域，使用 Framed 类型以便按需分配物理页
-        let map_area = MapArea::new(start, end, MapType::Framed, permission);
+        let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
+        self.push(map_area, None);
 
-        // 将新区域添加到内存集，但不立即分配所有物理页
-        self.areas.push(map_area);
-
-        // 只有在第一次访问时才会分配物理页（通过缺页异常处理）
         true
     }
 
@@ -332,10 +322,11 @@ impl MemorySet {
         true
     }
 }
-/// map area structure, controls a contiguous piece of virtual memory
+
+/// map area structure, controls a contiguous piece of virtual memory - 逻辑段
 pub struct MapArea {
     vpn_range: VPNRange,
-    data_frames: BTreeMap<VirtPageNum, FrameTracker>,
+    data_frames: BTreeMap<VirtPageNum, FrameTracker>, // 虚拟页与物理页的映射
     map_type: MapType,
     map_perm: MapPermission,
 }
