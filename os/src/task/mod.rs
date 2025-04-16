@@ -49,7 +49,7 @@ struct TaskManagerInner {
     /// id of current `Running` task
     current_task: usize,
     // syscall information
-    syscall_infos: [SysCallInfo; 20],
+    syscall_infos: [SysCallInfo; 20], // todo: - make it use vec
 }
 
 lazy_static! {

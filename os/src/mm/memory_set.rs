@@ -273,8 +273,8 @@ impl MemorySet {
     /// memory map from virtual memory to physical memory
     pub fn mmap(&mut self, start_va: VirtAddr, end_va: VirtAddr, map_perm: MapPermission) -> bool {
         for area in &self.areas {
-            if end_va >= area.vpn_range.get_start().into()
-                && start_va <= area.vpn_range.get_end().into()
+            if end_va > area.vpn_range.get_start().into()
+                && start_va < area.vpn_range.get_end().into()
             {
                 return false;
             }

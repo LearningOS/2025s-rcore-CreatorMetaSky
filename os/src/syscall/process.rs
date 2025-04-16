@@ -115,9 +115,9 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
 }
 
 pub fn sys_munmap(start: usize, len: usize) -> isize {
-    trace!("kernel: sys_munmap");
+    trace!("kernel: sys_munmap"); // todo: - the trace not display ?
 
-    if start & (PAGE_SIZE - 1) != 0 {
+    if start % PAGE_SIZE != 0 {
         return -1;
     }
 
