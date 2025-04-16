@@ -57,7 +57,6 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
-    trace!("try again");
 
     let pagetable = PageTable::from_token(current_user_token());
     let vaddr = VirtAddr::from(id);

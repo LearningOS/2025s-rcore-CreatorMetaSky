@@ -42,6 +42,9 @@ pub struct TaskManager {
     inner: UPSafeCell<TaskManagerInner>,
 }
 
+/// temp max app num
+pub const MAX_APP_NUM: usize = 16;
+
 /// The task manager inner in 'UPSafeCell'
 struct TaskManagerInner {
     /// task list
@@ -49,7 +52,7 @@ struct TaskManagerInner {
     /// id of current `Running` task
     current_task: usize,
     // syscall information
-    syscall_infos: [SysCallInfo; 20], // todo: - make it use vec
+    syscall_infos: [SysCallInfo; MAX_APP_NUM], // todo: - make it use vec
 }
 
 lazy_static! {
