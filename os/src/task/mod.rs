@@ -43,7 +43,7 @@ pub struct TaskManager {
 }
 
 /// temp max app num
-pub const MAX_APP_NUM: usize = 16;
+pub const MAX_APP_NUM: usize = 100;
 
 /// The task manager inner in 'UPSafeCell'
 struct TaskManagerInner {
@@ -52,7 +52,7 @@ struct TaskManagerInner {
     /// id of current `Running` task
     current_task: usize,
     // syscall information
-    syscall_infos: [SysCallInfo; MAX_APP_NUM], // todo: - make it use vec
+    syscall_infos: Vec<SysCallInfo>,
 }
 
 lazy_static! {
@@ -65,13 +65,19 @@ lazy_static! {
         for i in 0..num_app {
             tasks.push(TaskControlBlock::new(get_app_data(i), i));
         }
+
+        let mut syscall_infos = Vec::with_capacity(MAX_APP_NUM);
+        for _ in 0..MAX_APP_NUM {
+            syscall_infos.push(SysCallInfo::default());
+        }
+
         TaskManager {
             num_app,
             inner: unsafe {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
-                    syscall_infos: Default::default()
+                    syscall_infos,
                 })
             },
         }
