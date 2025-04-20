@@ -153,8 +153,11 @@ pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
     map_perm |= MapPermission::U;
 
     if let Some(task) = current_task() {
-        task.mmap(start_va, end_va, map_perm);
-        return 0;
+        if task.mmap(start_va, end_va, map_perm) {
+            return 0;
+        } else {
+            return -1;
+        }
     }
 
     -1
@@ -174,8 +177,11 @@ pub fn sys_munmap(start: usize, len: usize) -> isize {
     let end_va = VirtAddr::from(start + len);
 
     if let Some(task) = current_task() {
-        task.munmap(start_va, end_va);
-        return 0;
+        if task.munmap(start_va, end_va) {
+            return 0;
+        } else {
+            return -1;
+        }
     }
 
     -1
