@@ -1,3 +1,5 @@
+use core::mem::size_of;
+
 use super::{
     block_cache_sync_all, get_block_cache, Bitmap, BlockDevice, DiskInode, DiskInodeType, Inode,
     SuperBlock,
@@ -121,6 +123,14 @@ impl EasyFileSystem {
             (inode_id % inodes_per_block) as usize * inode_size,
         )
     }
+    /// Get inode id
+    pub fn get_inode_id(&self, block_id: usize, offset: usize) -> u32 {
+        let inode_size = size_of::<DiskInode>();
+        let block_inodes_count = BLOCK_SZ / inode_size;
+        let block_index = block_id - self.inode_area_start_block as usize;
+        let inode_index_of_block = offset / inode_size;
+        (block_index * block_inodes_count + inode_index_of_block) as u32
+    }
     /// Get data block by id
     pub fn get_data_block_id(&self, data_block_id: u32) -> u32 {
         self.data_area_start_block + data_block_id
@@ -147,5 +157,19 @@ impl EasyFileSystem {
             &self.block_device,
             (block_id - self.data_area_start_block) as usize,
         )
+    }
+    /// Deallocate an inode
+    pub fn dealloc_inode(&mut self, inode_id: u32) {
+        let (block_id, offset) = self.get_disk_inode_pos(inode_id);
+        get_block_cache(block_id as usize, Arc::clone(&self.block_device))
+            .lock()
+            .modify(offset, |disk_inode: &mut DiskInode| {
+                let blocks_to_free = disk_inode.clear_size(&self.block_device);
+                for blk in blocks_to_free {
+                    self.dealloc_data(blk);
+                }
+            });
+        self.inode_bitmap
+            .dealloc(&self.block_device, inode_id as usize);
     }
 }
