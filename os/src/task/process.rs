@@ -49,6 +49,10 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// enable deadlock detect
+    pub enable_deadlock_detect: bool,
+    /// semaphore available list
+    pub semaphore_available_list: Vec<usize>,
 }
 
 impl ProcessControlBlockInner {
@@ -81,6 +85,130 @@ impl ProcessControlBlockInner {
     /// get a task with tid in this process
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
+    }
+
+    pub fn mutex_deadlock_detect(&self) -> bool {
+        if !self.enable_deadlock_detect {
+            return false;
+        }
+
+        let task_num = self.tasks.len();
+        let mutex_num = self.mutex_list.len();
+        let mut available = vec![true; mutex_num];
+        let mut allocation = vec![vec![false; mutex_num]; task_num];
+        let mut need = vec![vec![false; mutex_num]; task_num];
+
+        for (task_id, task) in self.tasks.iter().enumerate() {
+            let task = task.as_ref().unwrap();
+            let task_inner = task.inner_exclusive_access();
+            if task_inner.res.is_none() {
+                continue;
+            }
+            for mutex_id in task_inner.hold_mutex_list.iter() {
+                allocation[task_id][*mutex_id] = true;
+                available[*mutex_id] = false;
+            }
+            if let Some(mutex_id) = task_inner.wait_mutex {
+                need[task_id][mutex_id] = true;
+            }
+        }
+        let mut finish = vec![false; task_num];
+        let mut work = available.clone();
+
+        loop {
+            let mut progress = false;
+            for i in 0..task_num {
+                if finish[i] {
+                    continue;
+                }
+
+                let can_finish = (0..mutex_num).all(|j| !need[i][j] || work[j]);
+                if can_finish {
+                    for j in 0..mutex_num {
+                        if allocation[i][j] {
+                            work[j] = true;
+                        }
+                    }
+                    finish[i] = true;
+                    progress = true;
+                }
+            }
+            if !progress {
+                break;
+            }
+        }
+        !finish.iter().all(|&f| f)
+    }
+    /// semaphore deadlock detect
+    pub fn semaphore_deadlock_detect(&self) -> bool {
+        if !self.enable_deadlock_detect {
+            return false;
+        }
+        let task_num = self.tasks.len();
+        let sem_num = self.semaphore_list.len();
+        let mut allocation = vec![vec![0; sem_num]; task_num];
+        let mut need = vec![vec![0; sem_num]; task_num];
+
+        for (task_id, task) in self.tasks.iter().enumerate() {
+            let task = task.as_ref().unwrap();
+            let task_inner = task.inner_exclusive_access();
+            if task_inner.res.is_none() {
+                continue;
+            }
+            for sem_id in task_inner.hold_semaphore_list.iter() {
+                allocation[task_id][*sem_id] += 1;
+            }
+            if let Some(sem_id) = task_inner.wait_semaphore {
+                need[task_id][sem_id] += 1;
+            }
+        }
+
+        let mut finish = vec![false; task_num];
+        let mut work = self.semaphore_available_list.clone();
+
+        print!("available:\n");
+        for i in 0..sem_num {
+            print!("{} ", work[i]);
+        }
+        print!("\n");
+        print!("allocation:\n");
+        for i in 0..task_num {
+            for j in 0..sem_num {
+                print!("{} ", allocation[i][j]);
+            }
+            print!("\n");
+        }
+        print!("need:\n");
+        for i in 0..task_num {
+            for j in 0..sem_num {
+                print!("{} ", need[i][j]);
+            }
+            print!("\n");
+        }
+
+        loop {
+            let mut progress = false;
+            for i in 0..task_num {
+                if finish[i] {
+                    continue;
+                }
+
+                let can_finish = (0..sem_num).all(|j| need[i][j] <= work[j]);
+                if can_finish {
+                    for j in 0..sem_num {
+                        work[j] += allocation[i][j];
+                    }
+                    finish[i] = true;
+                    progress = true;
+                }
+            }
+
+            if !progress {
+                break;
+            }
+        }
+
+        !finish.iter().all(|&f| f)
     }
 }
 
@@ -119,6 +247,8 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect: false,
+                    semaphore_available_list: vec![0; 0],
                 })
             },
         });
@@ -245,6 +375,8 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect: false,
+                    semaphore_available_list: vec![0; 0],
                 })
             },
         });
