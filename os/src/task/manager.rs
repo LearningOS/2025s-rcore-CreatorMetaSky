@@ -25,6 +25,23 @@ impl TaskManager {
     pub fn fetch(&mut self) -> Option<Arc<TaskControlBlock>> {
         self.ready_queue.pop_front()
     }
+
+    /// Take a process out of the ready queue with the minimum stride
+    pub fn pop_min_stride(&mut self) -> Option<Arc<TaskControlBlock>> {
+        let mut min_index = 0;
+        if self.ready_queue.is_empty() {
+            return None;
+        }
+        let mut min_stride = self.ready_queue[0].get_stride();
+        for (i, task) in self.ready_queue.iter().enumerate() {
+            let stride = task.get_stride();
+            if stride < min_stride {
+                min_stride = stride;
+                min_index = i;
+            }
+        }
+        self.ready_queue.remove(min_index)
+    }
 }
 
 lazy_static! {
