@@ -318,6 +318,38 @@ impl MemorySet {
             false
         }
     }
+
+    /// memory map from virtual memory to physical memory
+    pub fn mmap(&mut self, start_va: VirtAddr, end_va: VirtAddr, map_perm: MapPermission) -> bool {
+        for area in &self.areas {
+            if end_va > area.vpn_range.get_start().into()
+                && start_va < area.vpn_range.get_end().into()
+            {
+                return false;
+            }
+        }
+
+        let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
+        self.push(map_area, None);
+
+        true
+    }
+
+    /// Unmap a virtual memory area
+    pub fn munmap(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let pos = self.areas.iter().position(|area| {
+            area.vpn_range.get_start() == start_va.floor()
+                && area.vpn_range.get_end() == end_va.ceil()
+        });
+
+        if let Some(index) = pos {
+            let mut area = self.areas.remove(index);
+            area.unmap(&mut self.page_table);
+            true
+        } else {
+            false
+        }
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
