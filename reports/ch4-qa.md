@@ -1,5 +1,7 @@
 # CH4 QA
 
+## Codes Diff
+
 ## 结构存储对照关系
 
 - loader -> task -> memory_set -> page_table -> memory_area
@@ -146,4 +148,13 @@ pub fn init_frame_allocator() { // 这个函数设置了物理帧分配器的范
 
 ## 各种上下文的理解
 
-## 采用 diff codes 的方式去学习
+### TrapContext
+
+### TaskContext
+
+### 桥
+
+## PageFault 如何检测的
+
+- memarea 记录了虚拟地址空间的范围
+
