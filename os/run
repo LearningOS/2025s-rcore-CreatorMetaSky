@@ -1,0 +1,1 @@
+LOG=TRACE BASE=0 make run

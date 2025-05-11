@@ -36,7 +36,7 @@ lazy_static! {
 
 /// address space 地址空间 = 一系列有关联的逻辑段
 pub struct MemorySet {
-    page_table: PageTable, // 页管理
+    page_table: PageTable, // 页表结构
     areas: Vec<MapArea>,   // 管理所有的内存分布
 }
 
