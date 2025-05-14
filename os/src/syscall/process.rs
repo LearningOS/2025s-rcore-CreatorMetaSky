@@ -47,9 +47,8 @@ pub fn sys_fork() -> isize {
     let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0
-    trap_cx.x[10] = 0;
-    // add new task to scheduler
-    add_task(new_task);
+    trap_cx.x[10] = 0; // update ra
+    add_task(new_task); // add new task to scheduler
     new_pid as isize
 }
 
