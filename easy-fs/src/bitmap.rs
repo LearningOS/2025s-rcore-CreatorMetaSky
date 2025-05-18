@@ -25,14 +25,17 @@ impl Bitmap {
             blocks,
         }
     }
+
+    // 遍历区域中的每个块，再在每个块中以bit组（每组 64 bits）为单位进行遍历，找到一个尚未被全部分配出去的组，最后在里面分配一个bit
     /// Allocate a new block from a block device
     pub fn alloc(&self, block_device: &Arc<dyn BlockDevice>) -> Option<usize> {
         for block_id in 0..self.blocks {
+            // 调用 get_block_cache 获取块缓存，注意我们传入的块编号是区域起始块编号 start_block_id 加上区域内的块编号 block_id 得到的块设备上的块编号
             let pos = get_block_cache(
                 block_id + self.start_block_id as usize,
                 Arc::clone(block_device),
             )
-            .lock()
+            .lock() // 通过 .lock() 获取块缓存的互斥锁从而可以对块缓存进行访问
             .modify(0, |bitmap_block: &mut BitmapBlock| {
                 if let Some((bits64_pos, inner_pos)) = bitmap_block
                     .iter()

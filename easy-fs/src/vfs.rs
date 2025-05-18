@@ -41,6 +41,8 @@ impl Inode {
             .lock()
             .modify(self.block_offset, f)
     }
+
+    // 建立文件索引
     /// Find inode under a disk inode by name
     fn find_inode_id(&self, name: &str, disk_inode: &DiskInode) -> Option<u32> {
         // assert it is a directory
@@ -90,6 +92,7 @@ impl Inode {
         }
         disk_inode.increase_size(new_size, v, &self.block_device);
     }
+
     /// Create inode under current inode by name
     pub fn create(&self, name: &str) -> Option<Arc<Inode>> {
         let mut fs = self.fs.lock();
@@ -138,6 +141,8 @@ impl Inode {
         )))
         // release efs lock automatically by compiler
     }
+
+    // ls 方法可以收集根目录下的所有文件的文件名并以向量的形式返回
     /// List inodes under current inode
     pub fn ls(&self) -> Vec<String> {
         let _fs = self.fs.lock();
@@ -155,6 +160,7 @@ impl Inode {
             v
         })
     }
+
     /// Read data from current inode
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
         let _fs = self.fs.lock();
@@ -183,6 +189,7 @@ impl Inode {
         });
         block_cache_sync_all();
     }
+
     /// link current inode
     pub fn link(&self, old_name: &str, new_name: &str) -> bool {
         let mut fs = self.fs.lock();

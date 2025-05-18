@@ -23,9 +23,9 @@ const INDIRECT2_BOUND: usize = INDIRECT1_BOUND + INODE_INDIRECT2_COUNT;
 /// Super block of a filesystem
 #[repr(C)]
 pub struct SuperBlock {
-    magic: u32,
-    pub total_blocks: u32,
-    pub inode_bitmap_blocks: u32,
+    magic: u32,                   // 文件系统合法性验证的魔数
+    pub total_blocks: u32,        // 文件系统的总块数
+    pub inode_bitmap_blocks: u32, // 后面的四个字段则分别给出 easy-fs 布局中后四个连续区域的长度各为多少个块
     pub inode_area_blocks: u32,
     pub data_bitmap_blocks: u32,
     pub data_area_blocks: u32,
@@ -109,13 +109,18 @@ impl DiskInode {
     pub fn is_file(&self) -> bool {
         self.type_ == DiskInodeType::File
     }
+
+    // 计算为了容纳自身 size 字节的内容需要多少个数据块
     /// Return block number correspond to size.
     pub fn data_blocks(&self) -> u32 {
         Self::_data_blocks(self.size)
     }
+
     fn _data_blocks(size: u32) -> u32 {
         (size + BLOCK_SZ as u32 - 1) / BLOCK_SZ as u32
     }
+
+    // 不仅包含数据块，还需要统计索引块
     /// Return number of blocks needed include indirect1/2.
     pub fn total_blocks(size: u32) -> u32 {
         let data_blocks = Self::_data_blocks(size) as usize;
@@ -133,13 +138,18 @@ impl DiskInode {
         }
         total as u32
     }
+
+    // 可以计算将一个 DiskInode 的 size 扩容到 new_size 需要额外多少个数据和索引块
     /// Get the number of data blocks that have to be allocated given the new size of data
     pub fn blocks_num_needed(&self, new_size: u32) -> u32 {
         assert!(new_size >= self.size);
         Self::total_blocks(new_size) - Self::total_blocks(self.size)
     }
+
+    // DiskInode 最重要的数据块索引功能
     /// Get id of block given inner id
     pub fn get_block_id(&self, inner_id: u32, block_device: &Arc<dyn BlockDevice>) -> u32 {
+        // 分别利用直接索引/一级索引和二级索引，具体选用哪种索引方式取决于 block_id 所在的区间
         let inner_id = inner_id as usize;
         if inner_id < INODE_DIRECT_COUNT {
             self.direct[inner_id]
@@ -163,6 +173,8 @@ impl DiskInode {
                 })
         }
     }
+
+    // 按照直接索引、一级索引再到二级索引的顺序进行扩充
     /// Inncrease the size of current disk inode
     pub fn increase_size(
         &mut self,
@@ -310,6 +322,8 @@ impl DiskInode {
         self.indirect2 = 0;
         v
     }
+
+    // 文件内容从 offset 字节开始的部分读到内存中的缓冲区 buf 中，并返回实际读到的字节数
     /// Read data from current disk inode
     pub fn read_at(
         &self,
@@ -350,6 +364,7 @@ impl DiskInode {
         }
         read_size
     }
+
     /// Write data into current disk inode
     /// size must be adjusted properly beforehand
     pub fn write_at(
@@ -426,6 +441,7 @@ impl DirEntry {
     }
     /// Get name of the entry
     pub fn name(&self) -> &str {
+        // todo: how get the name
         let len = (0usize..).find(|i| self.name[*i] == 0).unwrap();
         core::str::from_utf8(&self.name[..len]).unwrap()
     }

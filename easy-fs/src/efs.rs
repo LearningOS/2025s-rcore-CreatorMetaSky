@@ -28,12 +28,17 @@ impl EasyFileSystem {
         total_blocks: u32,
         inode_bitmap_blocks: u32,
     ) -> Arc<Mutex<Self>> {
+        // 计算每个区域各应该包含多少块
         // calculate block size of areas & create bitmaps
+
+        // 索引块
         let inode_bitmap = Bitmap::new(1, inode_bitmap_blocks as usize);
         let inode_num = inode_bitmap.maximum();
         let inode_area_blocks =
             ((inode_num * core::mem::size_of::<DiskInode>() + BLOCK_SZ - 1) / BLOCK_SZ) as u32;
         let inode_total_blocks = inode_bitmap_blocks + inode_area_blocks;
+
+        // 数据块
         let data_total_blocks = total_blocks - 1 - inode_total_blocks;
         let data_bitmap_blocks = (data_total_blocks + 4096) / 4097;
         let data_area_blocks = data_total_blocks - data_bitmap_blocks;
@@ -41,6 +46,8 @@ impl EasyFileSystem {
             (1 + inode_bitmap_blocks + inode_area_blocks) as usize,
             data_bitmap_blocks as usize,
         );
+
+        // 创建文件系统
         let mut efs = Self {
             block_device: Arc::clone(&block_device),
             inode_bitmap,
@@ -48,6 +55,8 @@ impl EasyFileSystem {
             inode_area_start_block: 1 + inode_bitmap_blocks,
             data_area_start_block: 1 + inode_total_blocks + data_bitmap_blocks,
         };
+
+        // 清空所有块内容
         // clear all blocks
         for i in 0..total_blocks {
             get_block_cache(i as usize, Arc::clone(&block_device))
@@ -58,6 +67,8 @@ impl EasyFileSystem {
                     }
                 });
         }
+
+        // 初始化 superblock，传入计算好的参数
         // initialize SuperBlock
         get_block_cache(0, Arc::clone(&block_device)).lock().modify(
             0,
@@ -71,27 +82,34 @@ impl EasyFileSystem {
                 );
             },
         );
+
+        // 创建根目录 /
         // write back immediately
         // create a inode for root node "/"
-        assert_eq!(efs.alloc_inode(), 0);
+        assert_eq!(efs.alloc_inode(), 0); // 调用 alloc_inode 在 inode 位图中分配一个 inode ，由于这是第一次分配，它的编号固定是 0
         let (root_inode_block_id, root_inode_offset) = efs.get_disk_inode_pos(0);
         get_block_cache(root_inode_block_id as usize, Arc::clone(&block_device))
             .lock()
             .modify(root_inode_offset, |disk_inode: &mut DiskInode| {
                 disk_inode.initialize(DiskInodeType::Directory);
-            });
+            }); // 需要将分配到的 inode 初始化为 easy-fs 中的唯一一个目录
         block_cache_sync_all();
         Arc::new(Mutex::new(efs))
     }
+
+    // 通过 open 方法可以从一个已写入了 easy-fs 镜像的块设备上打开我们的 easy-fs
     /// Open a block device as a filesystem
     pub fn open(block_device: Arc<dyn BlockDevice>) -> Arc<Mutex<Self>> {
         // read SuperBlock
         get_block_cache(0, Arc::clone(&block_device))
             .lock()
             .read(0, |super_block: &SuperBlock| {
+                // 获取 superblock
                 assert!(super_block.is_valid(), "Error loading EFS!");
                 let inode_total_blocks =
                     super_block.inode_bitmap_blocks + super_block.inode_area_blocks;
+
+                // 构造 efs
                 let efs = Self {
                     block_device,
                     inode_bitmap: Bitmap::new(1, super_block.inode_bitmap_blocks as usize),
@@ -105,6 +123,7 @@ impl EasyFileSystem {
                 Arc::new(Mutex::new(efs))
             })
     }
+
     /// Get the root inode of the filesystem
     pub fn root_inode(efs: &Arc<Mutex<Self>>) -> Inode {
         let block_device = Arc::clone(&efs.lock().block_device);
