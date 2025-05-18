@@ -65,11 +65,12 @@ pub fn trap_handler() -> ! {
             // jump to next instruction anyway
             // println!("invoke syscall");
             let mut cx = current_trap_cx();
-            cx.sepc += 4;
+            cx.sepc += 4; // 将当前进程 Trap 上下文中的 sepc 向后移动了 4 字节，使得它回到用户态之后，会从发出系统调用的 ecall 指令的下一条指令开始执行
+
             // get system call return value
             let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]);
             // cx is changed during sys_exec, so we have to call it again
-            cx = current_trap_cx();
+            cx = current_trap_cx(); // 在 syscall 分发函数返回之后需要重新获取 cx，解决 trap context 被回收的问题
             cx.x[10] = result as usize; // update ra, return result to user stack
         }
         Trap::Exception(Exception::StoreFault)
@@ -85,9 +86,10 @@ pub fn trap_handler() -> ! {
                 current_trap_cx().sepc,
             );
             // page fault exit code
-            exit_current_and_run_next(-2);
+            exit_current_and_run_next(-2); // 访存错误 - 内存页错误
         }
         Trap::Exception(Exception::IllegalInstruction) => {
+            // 非法指令错误
             println!("[kernel] IllegalInstruction in application, kernel killed it.");
             // illegal instruction exit code
             exit_current_and_run_next(-3);
@@ -105,7 +107,7 @@ pub fn trap_handler() -> ! {
         }
     }
     //println!("before trap_return");
-    trap_return();
+    trap_return(); // 重新返回用户态
 }
 
 #[no_mangle]

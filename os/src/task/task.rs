@@ -100,15 +100,23 @@ impl TaskControlBlock {
     /// At present, it is only used for the creation of initproc
     pub fn new(elf_data: &[u8]) -> Self {
         // memory_set with elf program headers/trampoline/trap context/user stack
+        // 解析应用的 ELF 执行文件得到应用地址空间 memory_set ，用户栈在应用地址空间中的位置 user_sp 以及应用的入口点 entry_point
         let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+
+        // 手动查页表找到位于应用地址空间中新创建的Trap 上下文被实际放在哪个物理页帧上，用来做后续的初始化
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
             .unwrap()
             .ppn();
+
+        // 为该进程分配 PID 以及内核栈，并记录下内核栈在内核地址空间的位置 kernel_stack_top
         // alloc a pid and a kernel stack in kernel space
         let pid_handle = pid_alloc();
         let kernel_stack = kstack_alloc();
         let kernel_stack_top = kernel_stack.get_top();
+
+        // 在该进程的内核栈上压入初始化的任务上下文，使得第一次任务切换到它的时候可以跳转到 trap_return 并进入用户态开始执行
+        // 整合之前的部分信息创建进程控制块 task_control_block
         // push a task context which goes to trap_return to the top of kernel stack
         let task_control_block = Self {
             pid: pid_handle,
@@ -130,6 +138,8 @@ impl TaskControlBlock {
                 })
             },
         };
+
+        // 初始化位于该进程应用地址空间中的 Trap 上下文，使得第一次进入用户态的时候时候能正确跳转到应用入口点并设置好用户栈，同时也保证在 Trap 的时候用户态能正确进入内核态
         // prepare TrapContext in user space
         let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
         *trap_cx = TrapContext::app_init_context(
@@ -139,13 +149,17 @@ impl TaskControlBlock {
             kernel_stack_top,
             trap_handler as usize,
         );
+
+        // 将 task_control_block 返回
         task_control_block
     }
 
+    // 一个进程能够加载一个新应用的 ELF 可执行文件中的代码和数据替换原有的应用地址空间中的内容，并开始执行
     /// Load a new elf to replace the original application address space and start execution
     pub fn exec(&self, elf_data: &[u8]) {
         // memory_set with elf program headers/trampoline/trap context/user stack
-        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data); // 解析传入的 ELF 格式数据
+
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
             .unwrap()
@@ -153,12 +167,16 @@ impl TaskControlBlock {
 
         // **** access current TCB exclusively
         let mut inner = self.inner_exclusive_access();
+
         // substitute memory_set
-        inner.memory_set = memory_set;
+        inner.memory_set = memory_set; // 从 ELF 文件生成一个全新的地址空间并直接替换进来
+
         // update trap_cx ppn
         inner.trap_cx_ppn = trap_cx_ppn;
+
         // initialize base_size
         inner.base_size = user_sp;
+
         // initialize trap_cx
         let trap_cx = inner.get_trap_cx();
         *trap_cx = TrapContext::app_init_context(
@@ -171,11 +189,12 @@ impl TaskControlBlock {
         // **** release inner automatically
     }
 
+    // 从父进程的进程控制块创建一份子进程的控制块
     /// parent process fork the child process
     pub fn fork(self: &Arc<Self>) -> Arc<Self> {
         // ---- access parent PCB exclusively
-        let mut parent_inner = self.inner_exclusive_access();
-        // copy user space(include trap context)
+        let mut parent_inner = self.inner_exclusive_access(); // 创建子进程的地址空间
+                                                              // copy user space(include trap context)
         let memory_set = MemorySet::from_existed_user(&parent_inner.memory_set);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
@@ -191,11 +210,11 @@ impl TaskControlBlock {
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
                     trap_cx_ppn,
-                    base_size: parent_inner.base_size,
+                    base_size: parent_inner.base_size, // 让子进程和父进程的 base_size ，也即应用数据的大小保持一致
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
                     memory_set,
-                    parent: Some(Arc::downgrade(self)),
+                    parent: Some(Arc::downgrade(self)), // 将父进程的弱引用计数放到子进程的进程控制块中
                     children: Vec::new(),
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
@@ -205,7 +224,7 @@ impl TaskControlBlock {
                 })
             },
         });
-        // add child
+        // add child - 将子进程插入到父进程的孩子向量 children 中
         parent_inner.children.push(task_control_block.clone());
         // modify kernel_sp in trap_cx
         // **** access child PCB exclusively

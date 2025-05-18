@@ -60,7 +60,7 @@ pub const IDLE_PID: usize = 0;
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
     // take from Processor
-    let task = take_current_task().unwrap();
+    let task = take_current_task().unwrap(); // 当前进程控制块从处理器监控 PROCESSOR 中取出而不是得到一份拷贝，这是为了正确维护进程控制块的引用计数
 
     let pid = task.getpid();
     if pid == IDLE_PID {
@@ -73,10 +73,16 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 
     // **** access current TCB exclusively
     let mut inner = task.inner_exclusive_access();
+
+    // 将进程控制块中的状态修改为 TaskStatus::Zombie 即僵尸进程，这样它后续才能被父进程在 waitpid 系统调用的时候回收
     // Change status to Zombie
     inner.task_status = TaskStatus::Zombie;
+
+    // 将传入的退出码 exit_code 写入进程控制块中，后续父进程在 waitpid 的时候可以收集
     // Record exit code
     inner.exit_code = exit_code;
+
+    // 将当前进程的所有子进程挂在初始进程 initproc 下面，其做法是遍历每个子进程，修改其父进程为初始进程，并加入初始进程的孩子向量中
     // do not move to its parent but under initproc
 
     // ++++++ access initproc TCB exclusively
@@ -89,13 +95,19 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     }
     // ++++++ release parent PCB
 
+    // 对于当前进程占用的资源进行早期回收
     inner.children.clear();
+
+    // 只是将地址空间中的逻辑段列表 areas 清空（即执行 Vec 向量清空），这将导致应用地址空间被回收（即进程的数据和代码对应的物理页帧都被回收），但用来存放页表的那些物理页帧此时还不会被回收（会由父进程最后回收子进程剩余的占用资源）
     // deallocate user space
     inner.memory_set.recycle_data_pages();
+
     drop(inner);
     // **** release current PCB
     // drop task manually to maintain rc correctly
     drop(task);
+
+    // 调用 schedule 触发调度及任务切换，由于我们再也不会回到该进程的执行过程中，因此无需关心任务上下文的保存
     // we do not have to save task context
     let mut _unused = TaskContext::zero_init();
     schedule(&mut _unused as *mut _);
@@ -107,7 +119,7 @@ lazy_static! {
     /// the name "initproc" may be changed to any other app name like "usertests",
     /// but we have user_shell, so we don't need to change it.
     pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new(TaskControlBlock::new(
-        get_app_data_by_name("ch5b_initproc").unwrap()
+        get_app_data_by_name("ch5b_initproc").unwrap() // read app binary data -> elf format data, todo: support - macho format data ?
     ));
 }
 

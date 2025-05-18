@@ -233,11 +233,15 @@ impl MemorySet {
             elf.header.pt2.entry_point() as usize,
         )
     }
+
+    // 复制一个完全相同的地址空间
     /// Create a new address space by copy code&data from a exited process's address space.
     pub fn from_existed_user(user_space: &Self) -> Self {
-        let mut memory_set = Self::new_bare();
-        // map trampoline
-        memory_set.map_trampoline();
+        let mut memory_set = Self::new_bare(); // 新创建一个空的地址空间
+                                               // map trampoline
+        memory_set.map_trampoline(); //  为这个地址空间映射上跳板页面
+
+        // 遍历原地址空间中的所有逻辑段，将复制之后的逻辑段插入新的地址空间，在插入的时候就已经实际分配了物理页帧了
         // copy data sections/trap_context/user_stack
         for area in user_space.areas.iter() {
             let new_area = MapArea::from_another(area);
@@ -357,6 +361,8 @@ impl MapArea {
             map_perm,
         }
     }
+
+    // 从一个逻辑段复制得到一个虚拟地址区间、映射方式和权限控制均相同的逻辑段，不同的是由于它还没有真正被映射到物理页帧上，所以 data_frames 字段为空
     pub fn from_another(another: &Self) -> Self {
         Self {
             vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
@@ -365,6 +371,7 @@ impl MapArea {
             map_perm: another.map_perm,
         }
     }
+
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         let ppn: PhysPageNum;
         match self.map_type {

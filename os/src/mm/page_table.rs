@@ -183,6 +183,7 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     v
 }
 
+// 针对应用的字符串中字符的用户态虚拟地址，查页表，找到对应的内核虚拟地址，逐字节地构造字符串，直到发现一个 \0 为止
 /// Translate&Copy a ptr[u8] array end with `\0` to a `String` Vec through page table
 pub fn translated_str(token: usize, ptr: *const u8) -> String {
     let page_table = PageTable::from_token(token);
@@ -194,6 +195,7 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
             .unwrap()
             .get_mut());
         if ch == 0 {
+            // \0 break loop
             break;
         } else {
             string.push(ch as char);

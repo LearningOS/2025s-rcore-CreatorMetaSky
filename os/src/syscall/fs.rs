@@ -23,6 +23,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     }
 }
 
+// 后续章节会从文件系统中读取
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     trace!("kernel:pid[{}] sys_read", current_task().unwrap().pid.0);
     match fd {
@@ -32,7 +33,7 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
             loop {
                 c = console_getchar();
                 if c == 0 {
-                    suspend_current_and_run_next();
+                    suspend_current_and_run_next(); // 如果返回 0 则说明还没有输入，我们调用 suspend_current_and_run_next 暂时切换到其他进程
                     continue;
                 } else {
                     break;

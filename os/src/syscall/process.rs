@@ -47,15 +47,20 @@ pub fn sys_fork() -> isize {
     let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
     // we do not have to move to next instruction since we have done it before
     // for child process, fork returns 0
-    trap_cx.x[10] = 0; // update ra
-    add_task(new_task); // add new task to scheduler
-    new_pid as isize
+    trap_cx.x[10] = 0; // update ra - child process return 0
+    add_task(new_task); // add new task to scheduler - 将生成的子进程通过 add_task 加入到任务管理器中
+    new_pid as isize // current parent process return child pid
 }
 
 pub fn sys_exec(path: *const u8) -> isize {
     trace!("kernel:pid[{}] sys_exec", current_task().unwrap().pid.0);
     let token = current_user_token();
+
+    // 在内核中具体获得字符串的话就需要手动查页表
+    // 从内核地址空间之外的某个应用的用户态地址空间中拿到一个字符串
     let path = translated_str(token, path);
+
+    // 找到对应的 ELF 格式的数据
     if let Some(data) = get_app_data_by_name(path.as_str()) {
         let task = current_task().unwrap();
         task.exec(data);
@@ -65,6 +70,9 @@ pub fn sys_exec(path: *const u8) -> isize {
     }
 }
 
+// 如果当前的进程不存在一个进程 ID 为 pid（pid==-1 或 pid > 0）的子进程，则返回 -1；
+// 如果存在一个进程 ID 为 pid 的僵尸子进程，则正常回收并返回子进程的 pid，并更新系统调用的退出码参数为 exit_code
+// 这里还有一个 -2 的返回值，它的含义是子进程还没退出，通知用户库 user_lib （是实际发出系统调用的地方），这样用户库看到是 -2 后，就进一步调用 sys_yield 系统调用（第46行），让当前父进程进入等待状态
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
@@ -86,6 +94,8 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
         return -1;
         // ---- release current PCB
     }
+
+    // 判断符合要求的子进程中是否有僵尸进程，如果有的话还需要同时找出它在当前进程控制块子进程向量中的下标。如果找不到的话直接返回 -2
     let pair = inner.children.iter().enumerate().find(|(_, p)| {
         // ++++ temporarily access child PCB exclusively
         p.inner_exclusive_access().is_zombie() && (pid == -1 || pid as usize == p.getpid())
@@ -93,12 +103,21 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     });
     if let Some((idx, _)) = pair {
         let child = inner.children.remove(idx);
+
+        // 确认这是对于该子进程控制块的唯一一次强引用，即它不会出现在某个进程的子进程向量中，更不会出现在处理器监控器或者任务管理器中。当它所在的代码块结束，这次引用变量的生命周期结束，将导致该子进程进程控制块的引用计数变为 0 ，彻底回收掉它占用的所有资源
+        // 内核栈和它的 PID 还有它的应用地址空间存放页表的那些物理页帧等等
         // confirm that child will be deallocated after being removed from children list
         assert_eq!(Arc::strong_count(&child), 1);
+
+        // 得到子进程的 PID 并会在最终返回
         let found_pid = child.getpid();
+
+        // 得到了子进程的退出码
         // ++++ temporarily access child PCB exclusively
         let exit_code = child.inner_exclusive_access().exit_code;
         // ++++ release child PCB
+
+        // 写入到当前进程的应用地址空间中
         *translated_refmut(inner.memory_set.token(), exit_code_ptr) = exit_code;
         found_pid as isize
     } else {
