@@ -27,7 +27,7 @@ impl TaskManager {
     }
 
     /// Take a process out of the ready queue with the minimum stride
-    pub fn pop_min_stride(&mut self) -> Option<Arc<TaskControlBlock>> {
+    pub fn find_min_stride(&mut self) -> Option<Arc<TaskControlBlock>> {
         let mut min_index = 0;
         if self.ready_queue.is_empty() {
             return None;
@@ -59,5 +59,5 @@ pub fn add_task(task: Arc<TaskControlBlock>) {
 /// Take a process out of the ready queue
 pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
     //trace!("kernel: TaskManager::fetch_task");
-    TASK_MANAGER.exclusive_access().pop_min_stride()
+    TASK_MANAGER.exclusive_access().find_min_stride()
 }

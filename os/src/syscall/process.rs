@@ -231,6 +231,7 @@ pub fn sys_spawn(path: *const u8) -> isize {
 // YOUR JOB: Set task priority.
 pub fn sys_set_priority(prio: isize) -> isize {
     if prio < 2 {
+        // 要求优先级大于等于 2
         -1
     } else {
         current_task().unwrap().set_pass(BIG_STRIDE / prio as usize);
