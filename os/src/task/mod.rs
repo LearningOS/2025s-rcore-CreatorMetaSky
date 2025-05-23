@@ -94,6 +94,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     } else {
         drop(task);
     }
+
+    // 当是 0 号线程的时候，停止当前进程
     // however, if this is the main thread of current process
     // the process should terminate at once
     if tid == 0 {
