@@ -59,8 +59,28 @@ mutex_deadlock_detect 和 semaphore_deadlock_detect 实现了基于银行家算�
 
 ## 对比以下两种 Mutex 中的实现，二者有什么区别？这些区别可能会导致什么问题？
 
+这两种Mutex实现的主要区别及潜在问题分析如下：
 
+1. **加锁逻辑区别**
+   - `Mutex1`在获取锁时使用循环结构(第3-13行)，确保一定能获取到锁
+   - `Mutex2`是单次尝试(第28-35行)，如果第一次尝试失败后再次调用lock()可能仍会失败
 
+2. **解锁逻辑区别**
+   - `Mutex1`总是立即释放锁标记(第19行)，然后唤醒等待队列中的第一个任务(第20-22行)
+   - `Mutex2`只有在等待队列为空时才释放锁标记(第44行)，否则只唤醒任务不释放锁(第41-43行)
+
+3. **潜在问题**
+   - `Mutex2`可能导致**饥饿问题**：
+     - 如果等待队列持续有任务加入，锁标记永远不会释放
+     - 新来的任务无法获取锁，即使当前持有锁的任务已经完成
+   - `Mutex1`更公平但可能有**性能开销**：
+     - 每次解锁都会导致锁标记释放，可能增加上下文切换
+     - 但能保证所有任务都有机会获取锁
+
+4. **推荐场景**
+   - `Mutex1`适合通用场景，保证公平性
+   - `Mutex2`适合特定场景(如知道等待队列不会过长)，但需要谨慎使用
+        
 # 荣誉准则
 
 1. 在完成本次实验的过程（含此前学习的过程）中，我曾分别与 以下各位 就（与本次实验相关的）以下方面做过交流，还在代码中对应的位置以注释形式记录了具体的交流对象及内容：
@@ -69,10 +89,10 @@ mutex_deadlock_detect 和 semaphore_deadlock_detect 实现了基于银行家算�
 
 2. 此外，我也参考了 以下资料 ，还在代码中对应的位置以注释形式记录了具体的参考来源及内容：
 
-https://learningos.cn/rCore-Tutorial-Guide-2025S/chapter8/1thread-kernel.html
-- [rCore-Tutorial-Book](https://rcore-os.cn/rCore-Tutorial-Book-v3/chapter6/index.html)
-- [rCore-Tutorial-Guide](https://learningos.cn/rCore-Tutorial-Guide-2025S/chapter6/index.html)
-- [Slides](https://learningos.cn/os-lectures/lec9/p4-fs-lab.html)
+- [rCore-Tutorial-Book](https://rcore-os.cn/rCore-Tutorial-Book-v3/chapter8/0intro.html)
+- [rCore-Tutorial-Guide](https://learningos.cn/rCore-Camp-Guide-2025S/chapter8/0intro.html)
+- [Slides](https://learningos.cn/os-lectures/lec11/p3-labs.html)
+- [Slides](https://learningos.cn/os-lectures/lec12/p6-labs.html)
 
 3. 我独立完成了本次实验除以上方面之外的所有工作，包括代码与文档。 我清楚地知道，从以上方面获得的信息在一定程度上降低了实验难度，可能会影响起评分。
 4. 我从未使用过他人的代码，不管是原封不动地复制，还是经过了某些等价转换。 我未曾也不会向他人（含此后各届同学）复制或公开我的实验代码，我有义务妥善保管好它们。 我提交至本实验的评测系统的代码，均无意于破坏或妨碍任何计算机系统的正常运转。 我清楚地知道，以上情况均为本课程纪律所禁止，若违反，对应的实验成绩将按“-100”分计。
