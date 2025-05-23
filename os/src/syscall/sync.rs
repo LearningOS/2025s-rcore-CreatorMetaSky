@@ -70,11 +70,13 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     );
     let process = current_process();
     let process_inner = process.inner_exclusive_access();
+
     let task = current_task().unwrap();
     let mut task_inner = task.inner_exclusive_access();
     task_inner.wait_mutex = Some(mutex_id);
     drop(task_inner);
     if process_inner.mutex_deadlock_detect() {
+        // check has deadlock of mutex
         let task = current_task().unwrap();
         let mut task_inner = task.inner_exclusive_access();
         task_inner.wait_mutex = None;

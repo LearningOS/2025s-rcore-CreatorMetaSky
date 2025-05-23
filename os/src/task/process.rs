@@ -87,17 +87,20 @@ impl ProcessControlBlockInner {
         self.tasks[tid].as_ref().unwrap().clone()
     }
 
+    /// detect mutex deadlock
     pub fn mutex_deadlock_detect(&self) -> bool {
         if !self.enable_deadlock_detect {
             return false;
         }
 
-        let task_num = self.tasks.len();
-        let mutex_num = self.mutex_list.len();
-        let mut available = vec![true; mutex_num];
-        let mut allocation = vec![vec![false; mutex_num]; task_num];
-        let mut need = vec![vec![false; mutex_num]; task_num];
+        let task_num = self.tasks.len(); // 获取当前任务数量
+        let mutex_num = self.mutex_list.len(); // 互斥锁的数量
 
+        let mut available = vec![true; mutex_num]; // 每个互斥锁是否可用
+        let mut allocation = vec![vec![false; mutex_num]; task_num]; // 记录每个任务当前持有的互斥锁
+        let mut need = vec![vec![false; mutex_num]; task_num]; // 每个任务正在等待的互斥锁
+
+        // 遍历所有任务，收集状态
         for (task_id, task) in self.tasks.iter().enumerate() {
             let task = task.as_ref().unwrap();
             let task_inner = task.inner_exclusive_access();
@@ -121,7 +124,6 @@ impl ProcessControlBlockInner {
                 if finish[i] {
                     continue;
                 }
-
                 let can_finish = (0..mutex_num).all(|j| !need[i][j] || work[j]);
                 if can_finish {
                     for j in 0..mutex_num {
@@ -137,8 +139,10 @@ impl ProcessControlBlockInner {
                 break;
             }
         }
-        !finish.iter().all(|&f| f)
+
+        !finish.iter().all(|&f| f) // 是否所有任务都能完成
     }
+
     /// semaphore deadlock detect
     pub fn semaphore_deadlock_detect(&self) -> bool {
         if !self.enable_deadlock_detect {
@@ -217,6 +221,7 @@ impl ProcessControlBlock {
     pub fn inner_exclusive_access(&self) -> RefMut<'_, ProcessControlBlockInner> {
         self.inner.exclusive_access()
     }
+
     /// new process from elf file
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         trace!("kernel: ProcessControlBlock::new");
